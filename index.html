@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Real-Time Scheduler Simulator — ICU Monitor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0A121C;
+    --panel:#101C2C;
+    --panel2:#0E1826;
+    --line:#1D2E44;
+    --ecg:#33E28A;
+    --ecg-dim:#1B7A50;
+    --amber:#FFB020;
+    --blue:#4DA8FF;
+    --red:#FF4D5E;
+    --text:#EAF0F6;
+    --muted:#8DA0B8;
+    --mono:'JetBrains Mono', monospace;
+    --display:'Space Grotesk', sans-serif;
+    --body:'Inter', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse at 15% 0%, rgba(51,226,138,0.06), transparent 45%),
+      radial-gradient(ellipse at 85% 20%, rgba(255,77,94,0.05), transparent 40%),
+      var(--bg);
+    color:var(--text);
+    font-family:var(--body);
+    width:1040px;
+    padding:44px 50px 60px;
+  }
+  .eyebrow{font-family:var(--mono); font-size:11px; letter-spacing:.3em; color:var(--ecg); text-transform:uppercase; margin-bottom:14px;}
+  h1{font-family:var(--display); font-weight:700; font-size:34px; letter-spacing:-0.01em; margin-bottom:8px;}
+  .subhead{color:var(--muted); font-size:14.5px; max-width:680px; line-height:1.6; margin-bottom:30px;}
+
+  /* ---- algorithm tabs ---- */
+  .tabs{display:flex; gap:10px; margin-bottom:22px;}
+  .tab{
+    flex:1;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:16px 18px;
+    cursor:pointer;
+    text-align:left;
+    transition:border-color .15s, background .15s;
+  }
+  .tab:hover{border-color:#2A4363;}
+  .tab.active{border-color:var(--ecg); background:linear-gradient(135deg, rgba(51,226,138,.08), transparent);}
+  .tab .name{font-family:var(--display); font-weight:700; font-size:15px; margin-bottom:4px;}
+  .tab .desc{font-size:12px; color:var(--muted); line-height:1.5; margin-bottom:10px;}
+  .tab .stat{font-family:var(--mono); font-size:11px; letter-spacing:.05em;}
+  .tab .stat.zero{color:var(--ecg);}
+  .tab .stat.some{color:var(--red);}
+
+  /* ---- vitals panel ---- */
+  .vitals{
+    display:flex;
+    gap:16px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:20px 24px;
+    margin-bottom:20px;
+    align-items:center;
+    transition:border-color .3s, box-shadow .3s;
+  }
+  .vitals.critical{border-color:var(--red); box-shadow:0 0 0 1px rgba(255,77,94,.25), 0 0 24px rgba(255,77,94,.12);}
+  .vital{min-width:110px;}
+  .vital .num{font-family:var(--mono); font-size:28px; font-weight:700; color:var(--ecg);}
+  .vitals.critical .vital.hr .num, .vitals.critical .vital.spo2 .num{color:var(--red);}
+  .vital .lbl{font-size:10px; color:var(--muted); letter-spacing:.15em; text-transform:uppercase; margin-top:2px;}
+  .status-pill{
+    margin-left:auto;
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.15em;
+    padding:6px 14px;
+    border-radius:20px;
+    background:rgba(51,226,138,.12);
+    color:var(--ecg);
+    border:1px solid var(--ecg-dim);
+  }
+  .vitals.critical .status-pill{background:rgba(255,77,94,.14); color:var(--red); border-color:rgba(255,77,94,.4); animation:blink 1s infinite;}
+  @keyframes blink{50%{opacity:.4;}}
+  .waveform{flex:1; height:60px;}
+  .waveform svg{width:100%; height:100%; display:block;}
+  .waveform polyline{transition:points .1s linear;}
+
+  /* ---- gantt timeline ---- */
+  .timeline-wrap{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:20px 24px 16px;
+    margin-bottom:16px;
+  }
+  .timeline-head{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:14px;}
+  .timeline-head h3{font-family:var(--display); font-size:14px; font-weight:700;}
+  .timeline-head .clock{font-family:var(--mono); font-size:12px; color:var(--muted);}
+  .track{display:flex; align-items:center; gap:12px; margin-bottom:6px;}
+  .track .track-label{width:110px; flex-shrink:0; font-family:var(--mono); font-size:10.5px; color:var(--muted); text-align:right; letter-spacing:.03em;}
+  .track .cells{display:flex; gap:2px; flex:1; height:26px;}
+  .cell{
+    flex:1;
+    border-radius:2px;
+    background:#152238;
+    position:relative;
+  }
+  .cell.run-ecg{background:var(--ecg);}
+  .cell.run-spo2{background:var(--amber);}
+  .cell.run-display{background:var(--blue);}
+  .cell.miss{background:var(--red) !important; box-shadow:0 0 8px rgba(255,77,94,.7);}
+  .now-col{width:2px; background:rgba(255,255,255,.5); align-self:stretch; border-radius:1px;}
+
+  .legend{display:flex; gap:22px; margin-top:14px; padding-top:14px; border-top:1px dashed var(--line);}
+  .legend .item{display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--muted); font-family:var(--mono);}
+  .legend .swatch{width:11px; height:11px; border-radius:3px;}
+
+  /* ---- controls ---- */
+  .controls{
+    display:flex;
+    align-items:center;
+    gap:18px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:16px 22px;
+    margin-bottom:20px;
+  }
+  button.ctrl{
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:.05em;
+    background:var(--panel2);
+    color:var(--text);
+    border:1px solid var(--line);
+    border-radius:7px;
+    padding:9px 16px;
+    cursor:pointer;
+  }
+  button.ctrl:hover{border-color:var(--ecg);}
+  button.ctrl.primary{background:var(--ecg); color:#04150C; border-color:var(--ecg); font-weight:700;}
+  .speed-wrap{display:flex; align-items:center; gap:10px; margin-left:auto;}
+  .speed-wrap label{font-family:var(--mono); font-size:10.5px; color:var(--muted); letter-spacing:.1em;}
+  input[type=range]{accent-color:var(--ecg); width:130px;}
+
+  /* ---- explanation panel ---- */
+  .explain{
+    background:var(--panel2);
+    border:1px solid var(--line);
+    border-left:3px solid var(--ecg);
+    border-radius:8px;
+    padding:18px 22px;
+    font-size:13.5px;
+    color:var(--muted);
+    line-height:1.7;
+  }
+  .explain strong{color:var(--text);}
+  .explain .tag{font-family:var(--mono); font-size:10px; color:var(--ecg); letter-spacing:.2em; text-transform:uppercase; display:block; margin-bottom:8px;}
+
+  .missbanner{
+    font-family:var(--mono);
+    font-size:11px;
+    color:var(--red);
+    letter-spacing:.05em;
+    height:16px;
+    margin-top:8px;
+    opacity:0;
+    transition:opacity .2s;
+  }
+  .missbanner.show{opacity:1;}
+</style>
+</head>
+<body>
+
+  <div class="eyebrow">Interactive Simulation · Real-Time Scheduling</div>
+  <h1>Three Sensors. One CPU. Who Goes First?</h1>
+  <p class="subhead">Pick a scheduling algorithm and watch a real ICU monitor's CPU decide, tick by tick, which sensor task to run — and what happens to the patient when it gets it wrong.</p>
+
+  <div class="tabs" id="tabs"></div>
+
+  <div class="vitals" id="vitals">
+    <div class="vital hr">
+      <div class="num" id="hrNum">78</div>
+      <div class="lbl">Heart Rate · BPM</div>
+    </div>
+    <div class="vital spo2">
+      <div class="num" id="spo2Num">97%</div>
+      <div class="lbl">SpO₂</div>
+    </div>
+    <div class="waveform">
+      <svg viewBox="0 0 400 60" preserveAspectRatio="none">
+        <polyline id="wave" fill="none" stroke="#33E28A" stroke-width="2.5" points="0,30 400,30"/>
+      </svg>
+    </div>
+    <div class="status-pill" id="statusPill">STABLE</div>
+  </div>
+
+  <div class="timeline-wrap">
+    <div class="timeline-head">
+      <h3>CPU Timeline</h3>
+      <div class="clock" id="clock">t = 0 ms</div>
+    </div>
+    <div class="track"><div class="track-label">ECG · 4ms</div><div class="cells" id="row-ecg"></div></div>
+    <div class="track"><div class="track-label">SpO₂ · 20ms</div><div class="cells" id="row-spo2"></div></div>
+    <div class="track"><div class="track-label">Display · 100ms</div><div class="cells" id="row-display"></div></div>
+    <div class="missbanner" id="missbanner"></div>
+    <div class="legend">
+      <div class="item"><div class="swatch" style="background:var(--ecg)"></div>ECG running</div>
+      <div class="item"><div class="swatch" style="background:var(--amber)"></div>SpO₂ running</div>
+      <div class="item"><div class="swatch" style="background:var(--blue)"></div>Display running</div>
+      <div class="item"><div class="swatch" style="background:var(--red)"></div>Deadline missed</div>
+      <div class="item"><div class="swatch" style="background:#152238"></div>Idle</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="ctrl primary" id="playBtn">▶ Play</button>
+    <button class="ctrl" id="resetBtn">↺ Reset</button>
+    <div class="speed-wrap">
+      <label>SPEED</label>
+      <input type="range" id="speed" min="40" max="400" value="160">
+    </div>
+  </div>
+
+  <div class="explain" id="explain"></div>
+
+<script>
+const TOTAL = 100; // one full hyperperiod (LCM of 4, 20, 100)
+const TASKS = [
+  {id:'ecg', name:'ECG', period:4, exec:1, color:'#33E28A'},
+  {id:'spo2', name:'SpO₂', period:20, exec:4, color:'#FFB020'},
+  {id:'display', name:'Display', period:100, exec:10, color:'#4DA8FF'},
+];
+const PRIORITY = {ecg:0, spo2:1, display:2}; // shorter period = higher priority (Rate Monotonic)
+
+function computeSchedule(algo){
+  let instances = [];
+  let fcfsQueue = [];
+  let fcfsRunning = null;
+  const schedule = [];
+
+  for(let t=0; t<TOTAL; t++){
+    const arrivals = [];
+    TASKS.forEach(td=>{
+      if(t % td.period === 0){
+        const inst = {taskId: td.id, arrival: t, remaining: td.exec, deadline: t + td.period};
+        instances.push(inst);
+        arrivals.push(td.id);
+        if(algo==='fcfs') fcfsQueue.push(inst);
+      }
+    });
+
+    const misses = [];
+    instances = instances.filter(inst=>{
+      if(inst.remaining > 0 && inst.deadline <= t){
+        misses.push(inst.taskId);
+        if(algo==='fcfs' && fcfsRunning===inst) fcfsRunning = null;
+        return false;
+      }
+      return true;
+    });
+    if(algo==='fcfs') fcfsQueue = fcfsQueue.filter(i=>instances.includes(i));
+
+    let running = null;
+    let runningInst = null;
+
+    if(algo==='edf'){
+      const ready = instances.filter(i=>i.remaining>0 && i.arrival<=t);
+      ready.sort((a,b)=> a.deadline-b.deadline || a.arrival-b.arrival);
+      runningInst = ready[0] || null;
+    } else if(algo==='rm'){
+      const ready = instances.filter(i=>i.remaining>0 && i.arrival<=t);
+      ready.sort((a,b)=> PRIORITY[a.taskId]-PRIORITY[b.taskId] || a.arrival-b.arrival);
+      runningInst = ready[0] || null;
+    } else if(algo==='fcfs'){
+      if(fcfsRunning && fcfsRunning.remaining>0){
+        runningInst = fcfsRunning;
+      } else {
+        fcfsQueue = fcfsQueue.filter(i=>i.remaining>0);
+        if(fcfsQueue.length){ runningInst = fcfsQueue[0]; fcfsRunning = runningInst; }
+      }
+    }
+
+    if(runningInst){
+      runningInst.remaining -= 1;
+      running = runningInst.taskId;
+      if(runningInst.remaining === 0){
+        instances = instances.filter(i=>i!==runningInst);
+        if(algo==='fcfs'){ fcfsRunning=null; fcfsQueue = fcfsQueue.filter(i=>i!==runningInst); }
+      }
+    }
+
+    schedule.push({t, running, misses, arrivals});
+  }
+  return schedule;
+}
+
+const SCHEDULES = {
+  fcfs: computeSchedule('fcfs'),
+  rm: computeSchedule('rm'),
+  edf: computeSchedule('edf'),
+};
+
+function totalMisses(sched){ return sched.reduce((sum,tick)=>sum+tick.misses.length,0); }
+
+const ALGO_META = {
+  fcfs: {
+    name:'FCFS',
+    full:'First Come, First Served',
+    desc:'Runs whoever arrived first, to completion — no interruptions, no priorities.',
+    explain:'FCFS has no concept of urgency. When the Display task (10ms of work) starts, it runs to completion even if the ECG task arrives mid-way needing just 1ms. The critical sensor sits in the queue while a screen refresh finishes. Watch t=0: Display grabs the CPU first and everything else backs up.'
+  },
+  rm: {
+    name:'Rate Monotonic',
+    full:'Fixed Priority by Period',
+    desc:'Shorter period = higher priority, always. ECG can interrupt anything.',
+    explain:'Rate Monotonic assigns priority once, based on how often a task repeats. ECG (every 4ms) is always the highest priority, so it preempts SpO₂ or Display the instant it needs to run. Simple, predictable, and provably safe for this task set.'
+  },
+  edf: {
+    name:'EDF',
+    full:'Earliest Deadline First',
+    desc:'Whoever\'s deadline is closest runs next — recalculated every tick.',
+    explain:'EDF doesn\'t care which task it is, only how soon its deadline lands. Priorities shift dynamically tick to tick. It uses CPU time more efficiently than fixed priority and, like RM, meets every deadline here — but it needs more computation to decide, every single tick.'
+  }
+};
+
+let currentAlgo = 'fcfs';
+let currentTick = 0;
+let playing = false;
+let timer = null;
+let critUntil = -999;
+
+const WINDOW = 40; // visible ticks in the gantt
+
+const tabsEl = document.getElementById('tabs');
+Object.keys(ALGO_META).forEach(key=>{
+  const meta = ALGO_META[key];
+  const misses = totalMisses(SCHEDULES[key]);
+  const div = document.createElement('div');
+  div.className = 'tab' + (key===currentAlgo ? ' active' : '');
+  div.dataset.algo = key;
+  div.innerHTML = `
+    <div class="name">${meta.name}</div>
+    <div class="desc">${meta.desc}</div>
+    <div class="stat ${misses===0?'zero':'some'}">${misses===0 ? '✓ 0 misses / cycle' : '✕ '+misses+' misses / cycle'}</div>
+  `;
+  div.addEventListener('click', ()=> switchAlgo(key));
+  tabsEl.appendChild(div);
+});
+
+function switchAlgo(key){
+  currentAlgo = key;
+  currentTick = 0;
+  critUntil = -999;
+  document.querySelectorAll('.tab').forEach(t=> t.classList.toggle('active', t.dataset.algo===key));
+  document.getElementById('explain').innerHTML = `<span class="tag">${ALGO_META[key].full}</span>${ALGO_META[key].explain}`;
+  renderStatic();
+  resetVitals();
+}
+
+function renderStatic(){
+  ['ecg','spo2','display'].forEach(id=>{
+    document.getElementById('row-'+id).innerHTML = '';
+  });
+}
+
+function cellClassFor(taskId, tickState){
+  if(tickState.misses.includes(taskId)) return 'cell miss';
+  if(tickState.running === taskId) return 'cell run-'+taskId;
+  return 'cell';
+}
+
+function renderWindow(){
+  const sched = SCHEDULES[currentAlgo];
+  let start = currentTick - WINDOW + 1;
+  const rows = {ecg:[], spo2:[], display:[]};
+  for(let i=start; i<=currentTick; i++){
+    const idx = ((i % TOTAL) + TOTAL) % TOTAL;
+    const tickState = i < 0 ? {running:null, misses:[]} : sched[idx];
+    ['ecg','spo2','display'].forEach(id=> rows[id].push(cellClassFor(id, tickState)));
+  }
+  ['ecg','spo2','display'].forEach(id=>{
+    document.getElementById('row-'+id).innerHTML = rows[id].map(c=>`<div class="${c}"></div>`).join('');
+  });
+  document.getElementById('clock').textContent = `t = ${currentTick} ms`;
+}
+
+function resetVitals(){
+  document.getElementById('hrNum').textContent = '78';
+  document.getElementById('spo2Num').textContent = '97%';
+  document.getElementById('statusPill').textContent = 'STABLE';
+  document.getElementById('vitals').classList.remove('critical');
+  document.getElementById('wave').setAttribute('points', flatWave());
+  document.getElementById('missbanner').classList.remove('show');
+}
+
+function flatWave(){
+  let pts = [];
+  for(let x=0; x<=400; x+=10) pts.push(x+','+30);
+  return pts.join(' ');
+}
+function beatWave(){
+  // normal PQRST-ish beat repeated
+  const seg = [0,30, 20,30, 25,10, 30,50, 35,20, 50,30];
+  let pts = [];
+  for(let off=0; off<400; off+=50){
+    for(let i=0;i<seg.length;i+=2) pts.push((seg[i]+off)+','+seg[i+1]);
+  }
+  return pts.join(' ');
+}
+function erraticWave(){
+  let pts = [];
+  for(let x=0; x<=400; x+=8){
+    const y = 30 + (Math.random()-0.5)*46;
+    pts.push(x+','+y.toFixed(1));
+  }
+  return pts.join(' ');
+}
+
+function tick(){
+  const sched = SCHEDULES[currentAlgo];
+  const idx = currentTick % TOTAL;
+  const state = sched[idx];
+
+  if(state.misses.includes('ecg') || state.misses.includes('spo2')){
+    critUntil = currentTick + 14;
+    const label = state.misses.includes('ecg') ? 'ECG' : 'SpO₂';
+    const banner = document.getElementById('missbanner');
+    banner.textContent = `⚠ MISSED ${label} DEADLINE AT t=${currentTick}ms`;
+    banner.classList.add('show');
+    setTimeout(()=>banner.classList.remove('show'), 900);
+  } else if(state.misses.includes('display')){
+    const banner = document.getElementById('missbanner');
+    banner.textContent = `Display lag at t=${currentTick}ms (non-critical)`;
+    banner.classList.add('show');
+    setTimeout(()=>banner.classList.remove('show'), 900);
+  }
+
+  const vitalsEl = document.getElementById('vitals');
+  if(currentTick < critUntil){
+    vitalsEl.classList.add('critical');
+    document.getElementById('hrNum').textContent = Math.round(150 + Math.random()*35);
+    document.getElementById('spo2Num').textContent = Math.round(84 + Math.random()*5) + '%';
+    document.getElementById('statusPill').textContent = 'CRITICAL';
+    document.getElementById('wave').setAttribute('points', erraticWave());
+  } else {
+    vitalsEl.classList.remove('critical');
+    document.getElementById('hrNum').textContent = 78;
+    document.getElementById('spo2Num').textContent = '97%';
+    document.getElementById('statusPill').textContent = 'STABLE';
+    document.getElementById('wave').setAttribute('points', beatWave());
+  }
+
+  renderWindow();
+  currentTick++;
+}
+
+document.getElementById('playBtn').addEventListener('click', ()=>{
+  playing = !playing;
+  document.getElementById('playBtn').textContent = playing ? '⏸ Pause' : '▶ Play';
+  if(playing){
+    timer = setInterval(tick, Number(document.getElementById('speed').value));
+  } else {
+    clearInterval(timer);
+  }
+});
+
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  currentTick = 0;
+  critUntil = -999;
+  resetVitals();
+  renderWindow();
+});
+
+document.getElementById('speed').addEventListener('input', ()=>{
+  if(playing){
+    clearInterval(timer);
+    timer = setInterval(tick, Number(document.getElementById('speed').value));
+  }
+});
+
+// init
+switchAlgo('fcfs');
+renderWindow();
+</script>
+</body>
+</html>
